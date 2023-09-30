@@ -1,9 +1,13 @@
 # %%
 import tensorflow as tf
 import matplotlib.pyplot as plt
-import plotly.graph_objects as go
+import matplotlib.animation as animation
 import numpy as np
-import cv2 
+
+import PyQt5
+
+from IPython import get_ipython
+get_ipython().run_line_magic('matplotlib', 'qt')
 
 # %%
 
@@ -42,55 +46,47 @@ class ConvCA(tf.keras.Model):
         # print(inputs, conc_axis_2)
         return self.act(conv_out_1)
   
-def get_plot(heatmaps: list[go.Heatmap], fps):
-        
-    fig = go.Figure(
-        data=[heatmaps[0]],
-        layout=go.Layout(
-            title="Frame 0",
-            updatemenus=[dict(
-                type="buttons",
-                buttons=[dict(label="Play",
-                            method="animate",
-                            args=[None, {'frame':{'duration': fps}, }]
-                        )]
-            )],
-        ),
-        frames=[
-            go.Frame(
-                data=[heatmaps[i]],
-                layout=go.Layout(title_text=f"Frame {i}")
-            )
-            for i in range(1, len(heatmaps))
-        ],
-    )
-    
-    return fig
-
-def render(ca: ConvCA, grid, n=1000, save_every=1, exp_frac=0, fps=10):
+def episode(ca: ConvCA, grid, n=1000, save_every=1, exp_frac=0, fps=10):
     """ Render n steps of a ca starting from a random grid.
     Saves an image every save_every steps into the steps/ folder.
     Smooths the aniation with exponential averaging set by exp_frac
     """
     def get_array_from_grid(grid):
-        return tf.clip_by_value(grid[0,:,:,:3], 0, 1).numpy()    
+        return (tf.clip_by_value(grid[0,:,:,:3], 0, 1).numpy()*255).astype(np.uint8)
     
-    out = cv2.VideoWriter('video.mp4' ,cv2.VideoWriter_fourcc(*'DIVX'), 15, grid.shape[1:3])
-    heatmaps = []
-    array_i = get_array_from_grid(grid)
+    arrays = [get_array_from_grid(grid)]
+    
     for i in range(n):
         if i % save_every == 0:
-            array_i = exp_frac*array_i + (1-exp_frac)*get_array_from_grid(grid)
-            heatmaps.append(go.Image(z=array_i*255))
-            out.write(array_i)
-        grid = ca(grid)
+            arrays.append(exp_frac*arrays[-1] + (1-exp_frac)*get_array_from_grid(grid))
+            grid = ca(grid)
+    
+    return arrays
 
-    out.release()
-    cv2.destroyAllWindows()
-    return get_plot(heatmaps, fps=fps)
+def render_episode(arrays):
+    fig = plt.figure()
+    xlim, ylim = arrays[0].shape[:2]
+    ax = plt.axes(xlim=(0, xlim), ylim= (0, ylim))
+    #line, = ax.plot([], [], lw=2)
+    a=np.random.random((5,5))
+    im=plt.imshow(arrays[0],interpolation='none')
+    # initialization function: plot the background of each frame
+    def init():
+        im.set_data(np.random.random((5,5)))
+        return [im]
+
+    # animation function.  This is called sequentially
+    def animate(i):
+        im.set_array(arrays[i])
+        return [im]
+
+    anim = animation.FuncAnimation(fig, animate, init_func=init,
+                                frames=len(arrays), interval=20, blit=True)
+    anim.save('test.gif')
+    return anim
 
 # %%
-shape = (100,100)
+shape = (200,200)
 batchs, n_ch = 1, 5
 ca = ConvCA(filter_scale=0.5, act = inverse_gaussian)
 ca.filter = np.stack([np.expand_dims([[0.68, -0.9, 0.68],[-0.9, -0.66, -0.9],[0.68, -0.9, 0.68]], axis = -1)]*n_ch, axis=-1)
@@ -102,8 +98,8 @@ grid = tf.concat(
     axis = 0
 )
 
-fig = render(ca, grid, n = 100, save_every=2)
-fig.show()
+arrays = episode(ca, grid, n = 100, save_every=1)
+render_episode(arrays)
 # %%
 # hard coded filter 3x3 x 4 channels
 filters = np.stack([
