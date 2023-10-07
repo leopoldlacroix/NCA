@@ -1,0 +1,7 @@
+plotly
+numpy
+pandas
+scipy
+nbformat
+ipykernell
+tensorflow
