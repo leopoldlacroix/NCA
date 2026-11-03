@@ -3,5 +3,5 @@ numpy
 pandas
 scipy
 nbformat
-ipykernell
+ipykernel
 tensorflow
